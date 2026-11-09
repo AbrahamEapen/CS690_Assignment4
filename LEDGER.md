@@ -193,3 +193,62 @@ result:    1 of 2 allowed attempts used, status done after 5 model calls and 6 t
            passed."; no lessons; runs/runB/trace.jsonl
 changed:   read every diff in full before approving, as I did in the re-recorded runA
 
+## Entry 8
+artifact:  Part 7 A and B: .mcp.json, .claude/agents/reviewer.md, runs/terminal/,
+           evidence/terminal_mcp.md, evidence/review.md
+tool:      Claude Code, model Claude Opus 5.5, v2.1.305, 2026-11-08 (the vendor's agent
+           using a4-tools, and the reviewer subagent); the setup commands and agent files
+           were written in this repo's Claude Code session (Entry 5)
+prompts:   the handout's MCP prompt and reviewer prompt, typed verbatim;
+           prompts/part7-terminal-mcp-reviewer.md
+review:    /mcp showed a4-tools connected. The agent called mcp__a4-tools__run_tests
+           ("FAILED: 1 of 4 ... unknown code: save10") and mcp__a4-tools__read_file on
+           discounts.py, then explained the case-sensitive lookup and, unasked, noted
+           that last_day is never checked. I sent the prompt a second time after a /mcp
+           reconnect; both rounds are in the evidence. The export collapsed the calls
+           ("ctrl+o to expand"), so the full calls and results were appended verbatim
+           from the session transcript, labeled with its file name. The reviewer passed
+           runB's discounts.py on all five rules and listed edge cases outside the spec
+           (negative totals, code=None, datetime for today, spaces, Unicode upper()).
+           The reviewer transcript shows it was offered only Read, Grep and Glob (plus
+           Claude Code's internal handback tools) and used Read 4 times
+checks:    python -m agent check-mcp: all checks passed; .mcp.json runs
+           .venv/bin/python server.py --workspace runs/terminal/workspace;
+           diff fixture/discounts.py runs/terminal/workspace/discounts.py: no differences
+evidence:  HANDOUT Part 7 A and B; RUBRIC B6, C7
+risk:      the reviewer's verdict comes from reading code only; it ran nothing. Its
+           edge-case list is unverified against the judge, which tests none of them
+
+## Entry 9
+artifact:  Part 7 C, the fixer session: .claude/agents/fixer.md, runs/vendor/
+           (workspace/ and judge.txt), evidence/fixer.md
+tool:      Claude Code, model Claude Opus 5.5, v2.1.319, agent "fixer"
+           (tools: Read, Edit, Bash), 2026-11-08
+prompts:   claude --agent fixer "Make the tests pass in runs/vendor/workspace.";
+           prompts/part7-fixer.md
+review:    I read each command before approving it. The fixer ran the tests (1 error,
+           test_lowercase_code_works), ran cat on discounts.py, spec.md and the tests,
+           then made its one change with a sed command through Bash, not the Edit tool,
+           adding code = code.upper() before the CODES lookup. It reran the tests (OK)
+           and stopped. In its final message it named the rule 4 expiry bug and left it,
+           because no test failed and it was told to make the smallest change.
+           Corrections to file placement, not content: /export wrote fixer.md inside
+           runs/vendor/workspace/evidence/, so I moved it to evidence/fixer.md, appended
+           the full calls and results verbatim from the session transcript, and re-ran
+           python -m agent judge vendor so judge.txt lists only discounts.py as changed
+           (the first judge.txt had the same test results plus the stray file)
+checks:    python -m agent judge vendor: visible "PASSED: 4 of 4 tests passed.", judge
+           "FAILED: 1 of 6 tests did not pass." (test_rule_4_code_is_rejected_after_its_last_day);
+           files that differ from fixture/: discounts.py only; tests/ unchanged
+evidence:  HANDOUT Part 7 C; RUBRIC B7, C9
+risk:      one session; another run of the fixer could fix rule 4 or not. The Bash tool
+           would have let it edit tests/ too; only its instructions asked it not to
+dataset:   fixture/ (hash 8aaab9373de615a5) copied by python -m agent fresh vendor, task
+           "Make the tests pass in runs/vendor/workspace."
+result:    3 tool calls (2 Bash reads/test runs, 1 Bash sed edit plus test run); visible
+           tests 4 of 4 passed; judge 5 of 6 passed, rule 4 failed; runs/vendor/judge.txt
+changed:   noted for the report that "smallest change that makes the tests pass" leaves
+           spec rules the tests do not check. Both agents read spec.md; only the fixer's
+           instructions tied its goal to the failing tests, and only my agent's runs
+           are followed by a judge
+
