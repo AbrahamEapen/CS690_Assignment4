@@ -1,0 +1,1 @@
+Review Repo. I would like to complete steps 0 - 8  in Handout.md file. Prompt me for any descision and validation question. Ensure Ledger.md file is being updated. Ensure repo is review against Rubric.md file.

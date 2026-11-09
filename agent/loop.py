@@ -39,7 +39,9 @@ NOTES_HEADER = "Notes from earlier runs. Read them before you start:"
 #     That is: BASE_SYSTEM + "\n\n" + NOTES_HEADER + "\n" + notes.strip()
 #   This is long-term memory: the text of NOTES.md, put in front of the model at every start.
 def build_system_prompt(notes: str) -> str:
-    raise NotImplementedError("Part 3: write build_system_prompt in agent/loop.py")
+    if not notes.strip():
+        return BASE_SYSTEM
+    return BASE_SYSTEM + "\n\n" + NOTES_HEADER + "\n" + notes.strip()
 
 
 # run_agent(...) runs one attempt at the task and returns a RunResult.
@@ -94,4 +96,101 @@ def run_agent(
     notes: str = "",
     attempt: int = 1,
 ) -> RunResult:
-    raise NotImplementedError("Part 3: write run_agent in agent/loop.py")
+    system = build_system_prompt(notes)
+    history = [user_message(task)]
+    specs = [spec for spec in toolbox.specs() if gate_for(spec.name, {})[0] != "deny"]
+    steps = 0
+    input_tokens = 0
+    output_tokens = 0
+    last_output: str | None = None
+    edits_since_last_run = 0
+    status = ""
+    reason = ""
+    final_text = ""
+
+    while True:
+        stop_reason = budget_stop(steps, input_tokens + output_tokens, limits)
+        if stop_reason is not None:
+            status = "budget"
+            reason = stop_reason
+            break
+
+        try:
+            turn = provider.next_turn(system, history, specs)
+        except AIError as exc:
+            status = "error"
+            reason = str(exc)
+            break
+
+        steps += 1
+        input_tokens += turn.input_tokens
+        output_tokens += turn.output_tokens
+        history.append(turn.message)
+
+        if not turn.tool_calls:
+            status = "done"
+            reason = "the model replied without a tool call"
+            final_text = turn.text
+            break
+
+        stuck = False
+        for tool_call in turn.tool_calls:
+            decision, why = gate_for(tool_call.name, tool_call.args)
+            approved: bool | None = None
+            approval_reason = ""
+
+            if decision == "deny":
+                ok = False
+                text = f"Refused by policy: {why}"
+            elif decision == "ask":
+                preview = toolbox.preview(tool_call.name, tool_call.args)
+                if preview is None:
+                    ok, text = toolbox.call(tool_call.name, tool_call.args)
+                else:
+                    approved, approval_reason = approve(tool_call, preview)
+                    if approved:
+                        ok, text = toolbox.call(tool_call.name, tool_call.args)
+                    else:
+                        ok = False
+                        text = f"A person rejected this {tool_call.name} call. Reason: {approval_reason}"
+            else:
+                ok, text = toolbox.call(tool_call.name, tool_call.args)
+
+            history.append(tool_result_message(tool_call, text, ok))
+            trace.tool(
+                attempt=attempt,
+                step=steps,
+                thought=turn.text,
+                tool=tool_call.name,
+                input=tool_call.args,
+                gate=decision,
+                approved=approved,
+                reason=approval_reason if not approved else "",
+                ok=ok,
+                output=text,
+                input_tokens=turn.input_tokens,
+                output_tokens=turn.output_tokens,
+            )
+
+            if tool_call.name == "edit_file" and ok:
+                edits_since_last_run += 1
+            if tool_call.name == "run_tests" and ok:
+                stuck = is_stuck(last_output, text, edits_since_last_run) or stuck
+                last_output = text
+                edits_since_last_run = 0
+
+        if stuck:
+            status = "stuck"
+            reason = "the same tests failed the same way after an edit"
+            break
+
+    trace.stop(
+        attempt=attempt,
+        step=steps,
+        status=status,
+        reason=reason,
+        final_text=final_text,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+    return RunResult(status, reason, steps, input_tokens, output_tokens, final_text, history)
